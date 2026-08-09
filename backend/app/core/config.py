@@ -31,6 +31,28 @@ class Settings(BaseSettings):
 
     cors_origins: str = "*"
 
+    notifications_enabled: bool = False
+    auto_update_candidate_status: bool = True
+
+    email_provider: str = "none"
+
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str | None = None
+    smtp_use_tls: bool = True
+
+    sendgrid_api_key: str | None = None
+    sendgrid_from_email: str | None = None
+
+    shortlist_score_threshold: float = 70.0
+    reject_score_threshold: float = 40.0
+    schedule_link_score_threshold: float = 80.0
+
+    calcom_scheduling_url: str | None = None
+    company_name: str = "Our Company"
+
 
 @lru_cache
 def get_settings() -> Settings:

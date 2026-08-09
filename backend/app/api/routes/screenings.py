@@ -1,12 +1,14 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session
 from app.core.exceptions import NotFoundError
 from app.schemas.screening import ScreeningCreate, ScreeningResult
+from app.services.notifications.notification_service import notify_candidate_of_screening
 from app.services.screening.screening_service import ScreeningService
+from app.utils.explanation_parser import parse_strengths_and_gaps
 
 router = APIRouter(prefix="/api/screenings", tags=["screenings"])
 
@@ -16,7 +18,7 @@ def _to_result(score) -> ScreeningResult:
     partial = [ss.skill.name for ss in score.score_skills if ss.match_type == "partial"]
     missing = [ss.skill.name for ss in score.score_skills if ss.match_type == "missing"]
 
-    strengths, gaps = _parse_strengths_and_gaps(score.explanation or "")
+    strengths, gaps = parse_strengths_and_gaps(score.explanation or "")
     return ScreeningResult(
         id=score.id,
         candidate_id=score.candidate_id,
@@ -30,41 +32,35 @@ def _to_result(score) -> ScreeningResult:
         partial_skills=partial,
         missing_skills=missing,
         strengths=strengths,
-        gaps=strengths,
+        gaps=gaps,
         ai_summary=score.ai_summary,
         explanation=score.explanation or "",
         created_at=score.created_at,
     )
 
 
-def _parse_strengths_and_gaps(explanation: str) -> tuple[list[str], list[str]]:
-    strengths: list[str] = []
-    gaps: list[str] = []
-    section = None
-    for line in explanation.split("\n"):
-        stripped = line.strip()
-        if stripped == "Strengths:":
-            section = "strengths"
-            continue
-        if stripped == "Gaps:":
-            section = "gaps"
-            continue
-        if stripped.startswith("- ") and section == "strengths":
-            strengths.append(stripped[2:])
-        elif stripped.startswith("- ") and section == "gaps":
-            gaps.append(stripped[2:])
-        elif stripped == "":
-            continue
-        elif section in ("strengths", "gaps") and not stripped.startswith("-"):
-            section = None
-    return strengths, gaps
-
-
 @router.post("", response_model=ScreeningResult, status_code=201)
-def create_screening(payload: ScreeningCreate, db: Session = Depends(get_session)) -> ScreeningResult:
+def create_screening(
+    payload: ScreeningCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_session),
+) -> ScreeningResult:
     service = ScreeningService(db)
     score = service.screen(payload.candidate_id, payload.job_id)
-    return _to_result(score)
+    result = _to_result(score)
+
+    background_tasks.add_task(
+        notify_candidate_of_screening,
+        candidate_id=score.candidate_id,
+        candidate_name=score.candidate.name,
+        candidate_email=score.candidate.email,
+        job_title=score.job.title,
+        overall_score=score.overall_score,
+        strengths=result.strengths,
+        gaps=result.gaps,
+    )
+
+    return result
 
 
 @router.get("/{screening_id}", response_model=ScreeningResult)
