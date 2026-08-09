@@ -433,6 +433,8 @@ startup), and the Streamlit frontend.
 ### Candidates
 ![Candidates](docs/screenshots/candidates.png)
 
+### Notification Email 
+![CNotification](docs/screenshots/notification.png)
 ## 19. API Documentation
 
 Swagger UI: `http://localhost:8000/docs` · ReDoc: `http://localhost:8000/redoc`
