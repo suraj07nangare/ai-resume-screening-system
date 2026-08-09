@@ -1,3 +1,169 @@
+
+# AI Resume Screening & Candidate Ranking System
+
+An end-to-end AI-powered system that parses resumes (PDF/DOCX, including scanned
+PDFs via OCR), extracts structured requirements from job descriptions, produces
+deterministic and explainable candidate scores and rankings, and automates
+recruiter follow-up through email notifications and interview scheduling — all
+backed by a relational PostgreSQL schema.
+
+## 🎥 Demo Video
+
+[Watch the full walkthrough](https://drive.google.com/file/d/17bsRLoGs9pb8-Oto40N4FDz5EY4KRg1j/view?usp=drive_link)
+
+## 1. Project Overview
+
+Recruiters spend hours manually reading resumes and comparing them against job
+requirements. This system automates that pipeline end-to-end: upload a resume,
+create a job description, get an explainable 0–100 match score with matched/missing
+skills, strengths, and gaps, see a ranked leaderboard across all candidates for a
+role — and automatically notify candidates by email based on their score, with an
+interview scheduling link attached for strong matches.
+
+## 2. Problem Statement
+
+Given a pool of resumes and one or more job descriptions, produce a transparent,
+relationally-queryable candidate ranking that a recruiter can trust and audit,
+without hallucinated experience or opaque black-box scores — and automate the
+communication loop back to candidates.
+
+## 3. Features
+
+- PDF and DOCX resume parsing, with automatic OCR fallback for scanned PDFs
+- LLM-based structured extraction of candidate and job information (provider-agnostic)
+- Deterministic, weighted, explainable scoring (skills / experience / education / other)
+- Relational skill storage and matching (no core search over JSON blobs)
+- Candidate search & filtering (name, email, skill, experience range, status)
+- Candidate status tracking (pending / shortlisted / rejected) with manual override
+- Candidate detail view with full extracted profile and score history
+- Job-based ranking dashboard
+- **Automated email notifications** — shortlist, rejection, or under-review emails
+  sent automatically based on score thresholds, with AI-derived feedback
+- **Automated interview scheduling links** (via Cal.com) attached to shortlist
+  emails for top-scoring candidates
+- Streamlit UI with a modern recruiter-facing design across 7 pages, calling a
+  FastAPI backend over HTTP
+- Dockerized (FastAPI + Streamlit + PostgreSQL)
+- Alembic migrations, pytest test suite (35 tests, fully mocked — no API keys required)
+
+## 4. Architecture
+
+```mermaid
+flowchart LR
+    U[User] --> ST[Streamlit UI]
+    ST -- HTTP/JSON --> API[FastAPI Backend]
+    API --> DB[(PostgreSQL)]
+    API --> LLM[LLM Provider<br/>Gemini / OpenAI / Anthropic / Groq / Mock]
+    API --> OCR[OCR Service<br/>pytesseract + poppler]
+    API --> EMAIL[Email Service<br/>SMTP / SendGrid]
+    API --> CAL[Cal.com Scheduling Link]
+```
+
+The Streamlit frontend never talks to PostgreSQL directly. All validation, parsing,
+extraction, scoring, persistence, ranking, search, and notification logic live in
+the backend.
+
+### Backend layering
+
+```mermaid
+flowchart TB
+    Routes[api/routes] --> Services[services/*]
+    Services --> Repos[db/repositories]
+    Repos --> Models[db/models]
+    Services --> LLMLayer[services/llm]
+    Services --> Parsing[services/parsing + services/ocr]
+    Services --> Scoring[services/scoring]
+    Services --> Notifications[services/notifications]
+```
+
+## 5. Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend framework | FastAPI, Uvicorn, Pydantic v2 |
+| ORM / Migrations | SQLAlchemy 2.x, Alembic |
+| Database | PostgreSQL (SQLite supported for local dev/tests) |
+| Frontend | Streamlit |
+| PDF parsing | pdfplumber |
+| DOCX parsing | python-docx |
+| OCR | pytesseract + pdf2image (poppler) |
+| LLM | Provider-agnostic abstraction — Gemini / OpenAI / Anthropic / Groq / OpenRouter / Ollama, via `httpx` |
+| Email notifications | SMTP (e.g. Gmail) or SendGrid, provider-agnostic |
+| Interview scheduling | Cal.com (public booking link, no API key required) |
+| Background processing | FastAPI `BackgroundTasks` (non-blocking email/status updates) |
+| Testing | pytest, FastAPI TestClient, reportlab (test fixture generation) |
+| Containerization | Docker, docker-compose |
+
+## 6. Project Structure
+
+```
+ai-resume-screener/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                     (FastAPI app entrypoint)
+│   │   ├── api/
+│   │   │   ├── dependencies.py
+│   │   │   └── routes/                 (health, resumes, jobs, candidates, screenings)
+│   │   ├── core/                       (config, exceptions, logging)
+│   │   ├── db/
+│   │   │   ├── database.py
+│   │   │   ├── models/                 (Job, Candidate, Skill, CandidateSkill,
+│   │   │   │                            ResumeFile, Score, ScoreSkill)
+│   │   │   └── repositories/
+│   │   ├── schemas/                    (Pydantic request/response models)
+│   │   ├── services/
+│   │   │   ├── parsing/                (pdf_parser, docx_parser, text_cleaner, resume_extractor)
+│   │   │   ├── ocr/                    (pytesseract + pdf2image)
+│   │   │   ├── llm/                    (provider abstraction: gemini / openai / anthropic /
+│   │   │   │                            groq / openrouter / ollama / mock)
+│   │   │   ├── scoring/                (skill_matcher, experience_matcher,
+│   │   │   │                            education_matcher, scorer)
+│   │   │   ├── screening/              (screening_service)
+│   │   │   ├── notifications/          (email_service, smtp_provider, sendgrid_provider,
+│   │   │   │                            templates, scheduling, notification_service)
+│   │   │   ├── resume_service.py
+│   │   │   ├── job_service.py
+│   │   │   └── candidate_service.py
+│   │   └── utils/                      (file_validation, normalization, explanation_parser)
+│   ├── tests/                          (35 tests — parsing, OCR, scoring, screening,
+│   │                                    notifications, candidates, jobs)
+│   ├── alembic/
+│   │   ├── env.py
+│   │   └── versions/                   (schema migrations)
+│   ├── requirements.txt
+│   ├── requirements-dev.txt
+│   ├── pyproject.toml
+│   ├── .env.example
+│   └── Dockerfile
+│
+├── frontend/
+│   ├── app.py                          (entrypoint — st.navigation page registry)
+│   ├── pages/
+│   │   ├── dashboard.py
+│   │   ├── upload_resume.py
+│   │   ├── create_job.py
+│   │   ├── candidates.py
+│   │   ├── screen_candidate.py
+│   │   ├── ranking_dashboard.py
+│   │   └── candidate_details.py
+│   ├── components/
+│   │   └── theme.py                    (shared CSS, KPI cards, status/skill chips)
+│   ├── services/
+│   │   └── api_client.py               (all backend HTTP calls)
+│   ├── .streamlit/
+│   │   └── config.toml                 (theme config)
+│   ├── requirements.txt
+│   └── Dockerfile
+│
+├── docs/
+│   └── screenshots/                    (dashboard.png, resume.png, screening.png,
+│                                        ranking.png, candidates.png)
+│
+├── docker-compose.yml
+├── .gitignore
+└── README.md
+```
+
 ## 7. Database Schema
 
 ```mermaid
