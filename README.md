@@ -10,7 +10,7 @@ backed by a relational PostgreSQL schema.
 ## 🎥 Demo Video
 
 [Watch the full walkthrough](https://drive.google.com/file/d/17bsRLoGs9pb8-Oto40N4FDz5EY4KRg1j/view?usp=drive_link)
-
+Select 1080p For better View
 ## 1. Project Overview
 
 Recruiters spend hours manually reading resumes and comparing them against job
